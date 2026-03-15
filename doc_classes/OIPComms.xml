@@ -152,6 +152,10 @@
 			<param index="2" name="elem_count" type="int" />
 			<description>
 			Register a tag to a [code]tag_group_name[/code]. The tag group must be registered prior to registering the tag.
+			The format of [code]tag_name[/code] depends on the protocol of the tag group:
+			[b]EtherNet/IP ([code]ab_eip[/code]):[/b] A CIP tag name as defined in the PLC program (e.g. [code]MyTag[/code], [code]Program:MainProgram.MyTag[/code], [code]myUDT.field[/code], [code]myArray[0][/code]).
+			[b]Modbus TCP ([code]modbus_tcp[/code]):[/b] A register type prefix followed by the register number: [code]co[/code] (coil), [code]di[/code] (discrete input), [code]hr[/code] (holding register), or [code]ir[/code] (input register). For example: [code]hr0[/code], [code]co21[/code].
+			[b]OPC UA ([code]opc_ua[/code]):[/b] Only the identifier after the namespace prefix. The namespace is already specified by the tag group's [code]path[/code] field. For example, [code]MyVariable[/code] from [code]ns=2;s=MyVariable[/code], or [code]12345[/code] from [code]ns=2;i=12345[/code].
 			[i]Note: [code]elem_count[/code] is not currently implemented. This will be future work if array reads/writes are needed.[/i]
 			</description>
 		</method>
