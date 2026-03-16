@@ -28,6 +28,11 @@ compile_commands.json
 # Ignore files generated for documentation
 /src/gen
 
+# Build output
+bin/windows/*.dll
+bin/windows/*.lib
+demo/bin/windows/*.dll
+
 # Binaries
 *.o
 *.os
@@ -37,7 +42,7 @@ compile_commands.json
 *.pyc
 *.dblite
 *.pdb
-.lib
+*.lib
 *.config
 *.creator
 *.creator.user
