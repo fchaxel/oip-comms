@@ -29,6 +29,7 @@ OIPComms::~OIPComms() {
 	print("Threads shutdown");
 
 	cleanup_tag_groups();
+	browse_disconnect();
 }
 
 void OIPComms::cleanup_tag_groups() {
@@ -546,6 +547,11 @@ void OIPComms::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("clear_tag_groups"), &OIPComms::clear_tag_groups);
 
+	ClassDB::bind_method(D_METHOD("browse_connect", "endpoint"), &OIPComms::browse_connect);
+	ClassDB::bind_method(D_METHOD("browse_disconnect"), &OIPComms::browse_disconnect);
+	ClassDB::bind_method(D_METHOD("browse_children", "node_id"), &OIPComms::browse_children);
+	ClassDB::bind_method(D_METHOD("browse_node_info", "node_id"), &OIPComms::browse_node_info);
+
 	ADD_SIGNAL(MethodInfo("tag_group_polled", PropertyInfo(Variant::STRING, "tag_group_name")));
 	ADD_SIGNAL(MethodInfo("tag_group_initialized", PropertyInfo(Variant::STRING, "tag_group_name")));
 	ADD_SIGNAL(MethodInfo("comms_error"));
@@ -685,6 +691,204 @@ void OIPComms::clear_tag_groups() {
 		tag_groups.clear();
 		tag_group_order.clear();
 	}
+}
+
+bool OIPComms::browse_connect(const String p_endpoint) {
+	browse_disconnect();
+
+	String endpoint = p_endpoint;
+	if (endpoint.to_lower().contains("localhost"))
+		endpoint = endpoint.replace("localhost", "127.0.0.1");
+
+	browse_client = UA_Client_new();
+	UA_ClientConfig *config = UA_Client_getConfig(browse_client);
+	UA_ClientConfig_setDefault(config);
+
+	CharString endpoint_utf8 = endpoint.utf8();
+	UA_StatusCode ret_val = UA_Client_connect(browse_client, endpoint_utf8.get_data());
+	if (ret_val != UA_STATUSCODE_GOOD) {
+		print("Browse connect failed with status code " + String(UA_StatusCode_name(ret_val)), true);
+		UA_Client_delete(browse_client);
+		browse_client = nullptr;
+		return false;
+	}
+
+	print("Browse client connected to " + p_endpoint);
+	return true;
+}
+
+void OIPComms::browse_disconnect() {
+	if (browse_client != nullptr) {
+		UA_Client_disconnect(browse_client);
+		UA_Client_delete(browse_client);
+		browse_client = nullptr;
+		print("Browse client disconnected");
+	}
+}
+
+static String node_class_to_string(UA_NodeClass nc) {
+	switch (nc) {
+		case UA_NODECLASS_OBJECT: return "Object";
+		case UA_NODECLASS_VARIABLE: return "Variable";
+		case UA_NODECLASS_METHOD: return "Method";
+		case UA_NODECLASS_OBJECTTYPE: return "ObjectType";
+		case UA_NODECLASS_VARIABLETYPE: return "VariableType";
+		case UA_NODECLASS_REFERENCETYPE: return "ReferenceType";
+		case UA_NODECLASS_DATATYPE: return "DataType";
+		case UA_NODECLASS_VIEW: return "View";
+		default: return "Unknown";
+	}
+}
+
+static String ua_node_id_to_string(const UA_NodeId &id) {
+	UA_String out = UA_STRING_NULL;
+	UA_NodeId_print(&id, &out);
+	String result = String::utf8((const char *)out.data, (int)out.length);
+	UA_String_clear(&out);
+	return result;
+}
+
+Array OIPComms::browse_children(const String p_node_id) {
+	Array results;
+
+	if (browse_client == nullptr) {
+		print("Browse client not connected", true);
+		return results;
+	}
+
+	CharString node_id_utf8 = p_node_id.utf8();
+	UA_String node_id_str = UA_STRING(const_cast<char *>(node_id_utf8.get_data()));
+	UA_NodeId parent_id;
+	UA_StatusCode parse_ret = UA_NodeId_parse(&parent_id, node_id_str);
+	if (parse_ret != UA_STATUSCODE_GOOD) {
+		print("Failed to parse node ID for browse: " + p_node_id, true);
+		return results;
+	}
+
+	UA_BrowseDescription bd;
+	UA_BrowseDescription_init(&bd);
+	bd.nodeId = parent_id;
+	bd.browseDirection = UA_BROWSEDIRECTION_FORWARD;
+	bd.referenceTypeId = UA_NODEID_NUMERIC(0, UA_NS0ID_HIERARCHICALREFERENCES);
+	bd.includeSubtypes = true;
+	bd.resultMask = UA_BROWSERESULTMASK_ALL;
+
+	UA_BrowseResult br = UA_Client_browse(browse_client, nullptr, 0, &bd);
+
+	while (true) {
+		for (size_t i = 0; i < br.referencesSize; i++) {
+			UA_ReferenceDescription &ref = br.references[i];
+
+			Dictionary entry;
+			entry["node_id"] = ua_node_id_to_string(ref.nodeId.nodeId);
+			entry["display_name"] = String::utf8((const char *)ref.displayName.text.data, (int)ref.displayName.text.length);
+			entry["node_class"] = node_class_to_string(ref.nodeClass);
+			entry["browse_name"] = String::utf8((const char *)ref.browseName.name.data, (int)ref.browseName.name.length);
+
+			results.push_back(entry);
+		}
+
+		if (br.continuationPoint.length == 0)
+			break;
+
+		UA_ByteString cp = br.continuationPoint;
+		UA_BrowseResult_clear(&br);
+		br = UA_Client_browseNext(browse_client, false, cp);
+	}
+
+	UA_BrowseResult_clear(&br);
+	UA_NodeId_clear(&parent_id);
+
+	return results;
+}
+
+static String ua_variant_to_string(const UA_Variant &value) {
+	if (value.type == nullptr || value.data == nullptr)
+		return "";
+	if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_BOOLEAN]))
+		return *(UA_Boolean *)value.data ? "True" : "False";
+	if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_INT16]))
+		return String::num_int64(*(UA_Int16 *)value.data);
+	if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_UINT16]))
+		return String::num_int64(*(UA_UInt16 *)value.data);
+	if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_INT32]))
+		return String::num_int64(*(UA_Int32 *)value.data);
+	if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_UINT32]))
+		return String::num_int64(*(UA_UInt32 *)value.data);
+	if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_INT64]))
+		return String::num_int64(*(UA_Int64 *)value.data);
+	if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_UINT64]))
+		return String::num_int64(*(UA_UInt64 *)value.data);
+	if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_FLOAT]))
+		return String::num(*(UA_Float *)value.data);
+	if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DOUBLE]))
+		return String::num(*(UA_Double *)value.data);
+	if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_STRING])) {
+		UA_String *s = (UA_String *)value.data;
+		return String::utf8((const char *)s->data, (int)s->length);
+	}
+	if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_SBYTE]))
+		return String::num_int64(*(UA_SByte *)value.data);
+	if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_BYTE]))
+		return String::num_int64(*(UA_Byte *)value.data);
+	return "(complex)";
+}
+
+Dictionary OIPComms::browse_node_info(const String p_node_id) {
+	Dictionary info;
+
+	if (browse_client == nullptr) {
+		print("Browse client not connected", true);
+		return info;
+	}
+
+	CharString node_id_utf8 = p_node_id.utf8();
+	UA_String node_id_str = UA_STRING(const_cast<char *>(node_id_utf8.get_data()));
+	UA_NodeId node_id;
+	UA_StatusCode ret = UA_NodeId_parse(&node_id, node_id_str);
+	if (ret != UA_STATUSCODE_GOOD) {
+		print("Failed to parse node ID: " + p_node_id, true);
+		return info;
+	}
+
+	info["node_id"] = p_node_id;
+
+	UA_Variant value;
+	UA_Variant_init(&value);
+	if (UA_Client_readValueAttribute(browse_client, node_id, &value) == UA_STATUSCODE_GOOD) {
+		info["value"] = ua_variant_to_string(value);
+		info["type"] = (value.type != nullptr) ? String(value.type->typeName) : String("Unknown");
+	} else {
+		info["value"] = "";
+		info["type"] = "";
+	}
+	UA_Variant_clear(&value);
+
+	UA_Byte access_level = 0;
+	if (UA_Client_readAccessLevelAttribute(browse_client, node_id, &access_level) == UA_STATUSCODE_GOOD) {
+		String access;
+		if (access_level & UA_ACCESSLEVELMASK_READ) access += "Read";
+		if (access_level & UA_ACCESSLEVELMASK_WRITE) {
+			if (!access.is_empty()) access += ", ";
+			access += "Write";
+		}
+		info["access"] = access;
+	} else {
+		info["access"] = "";
+	}
+
+	UA_LocalizedText description;
+	UA_LocalizedText_init(&description);
+	if (UA_Client_readDescriptionAttribute(browse_client, node_id, &description) == UA_STATUSCODE_GOOD) {
+		info["description"] = String::utf8((const char *)description.text.data, (int)description.text.length);
+	} else {
+		info["description"] = "";
+	}
+	UA_LocalizedText_clear(&description);
+
+	UA_NodeId_clear(&node_id);
+
+	return info;
 }
 
 // OIP READ/WRITES

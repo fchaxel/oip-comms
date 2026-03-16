@@ -85,6 +85,8 @@ private:
 
 	OIPBlockingQueue tag_group_queue;
 
+	UA_Client *browse_client = nullptr;
+
 	uint64_t last_ticks = 0;
 
 	bool scene_signals_set = false;
@@ -179,6 +181,11 @@ public:
 	OIP_DECLARE_FUNC(float32, float)
 
 	void clear_tag_groups();
+
+	bool browse_connect(const String p_endpoint);
+	void browse_disconnect();
+	Array browse_children(const String p_node_id);
+	Dictionary browse_node_info(const String p_node_id);
 
 	void process();
 
