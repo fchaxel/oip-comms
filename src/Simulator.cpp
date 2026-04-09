@@ -33,7 +33,7 @@ private:
     bool IsConst = false;
     std::string Name;
 
-    char _operator; // ten operators : + - * / ^ | & ! # and ~ same as ! changed somwhere in the code. 
+    char _operator; // ten operators : + - * / %^ | & ! # and ~ same as ! changed somwhere in the code. 
     // # (no op.) is for only one member such as var1=var2 ... could be done just with var2
 
     // var1=(var2+var3)*(var4-var5) ->  2 by 2 decomposition can be done by the user,
@@ -87,9 +87,9 @@ private:
             func = &SimTag::Square;
             UserfuncValueTags.clear();
         }
-        else if ((Name.substr(0, 4) == "sin(") && (Name.back() == ')'))
+        else if ((Name.substr(0, 6) == "sinus(") && (Name.back() == ')'))
         {
-            extractFuncParamFromString(Name.substr(4));
+            extractFuncParamFromString(Name.substr(6));
             func = &SimTag::Sin;
             UserfuncValueTags.clear();
         }
@@ -260,6 +260,8 @@ private:
             else if (_operator == '/')
                 // NaN, +inf, -inf are OK also to be converted to int or others (with strange results but no error)
                 Val = operandleft->GetVal(Depth + 1) / operandright->GetVal(Depth + 1);
+            else if (_operator == '%')
+                Val = fmod(operandleft->GetVal(Depth + 1),operandright->GetVal(Depth + 1));
             else // boolean operators
             {
                 bool V1 = (bool)operandleft->GetVal(Depth + 1);
@@ -594,7 +596,7 @@ private:
         size_t opPos = std::string::npos;
         for (size_t i = 0; i < rightPart.size(); ++i) 
         {
-            if (rightPart[i] == '+' || rightPart[i] == '-' || rightPart[i] == '*' || rightPart[i] == '/' 
+            if (rightPart[i] == '+' || rightPart[i] == '-' || rightPart[i] == '*' || rightPart[i] == '/' || rightPart[i] == '%'
                 || rightPart[i] == '^' || rightPart[i] == '&' || rightPart[i] == '|')
             {
                 opPos = i;
