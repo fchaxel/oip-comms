@@ -55,6 +55,7 @@ static constexpr socket_t invalid_socket_v = -1;
 #include <thread>
 #include <mutex>
 #include <functional>
+#include <stack>
 
 #include "Simulator.hpp"
 
@@ -154,7 +155,7 @@ private:
               case 17: func = &SimTag::CompareNE;break; // !=
               case 18: func = &SimTag::Prev;break; 
             }
-            extractFuncParamFromString(Name.substr((int)functionNames[i].size()+1));
+            extractFuncParamFromString(Name);
             if (i!=5)
               UserfuncValueTags.clear();
 
@@ -701,41 +702,57 @@ private:
         return theTagsStorage[funcLeftTag]->Val;
     }
     
-    int extractFuncParamFromString(const std::string& params) 
-    {
-        int Idx = 0;
-        
-        std::string input = params;
+    std::vector<std::string> splitArgs(const std::string& s) {
+        std::vector<std::string> result;
+        std::string current;
+        int depth = 0;
 
-        if (input.front() == '(')
-            input = input.substr(1);
-        if (input.back() == ')')
-            input = input.substr(0, input.size() - 1);
+        size_t start = s.find('(');
+        size_t end = s.rfind(')');
+        if (start == std::string::npos || end == std::string::npos || end <= start)
+            return result;
 
-        // extract param
-        size_t pos = 0;
-        while (true) 
-        {
-            size_t comma = input.find(',', pos);
-            std::string param = (comma == std::string::npos)
-                ? input.substr(pos)
-                : input.substr(pos, comma - pos);
+        for (size_t i = start + 1; i < end; ++i) {
+            char c = s[i];
 
-            if (!param.empty()) {
-                switch (Idx++)
-                {
-                    case 0: funcPeriodeTag = GetOrCreateTag(param); break;
-                    case 1: funcShiftTag = GetOrCreateTag(param);  break;
-                    case 2: funcMagnitudeTag = GetOrCreateTag(param);  break;
-                    case 3: funcFloorTag = GetOrCreateTag(param); break;
-                    default : UserfuncValueTags.push_back(GetOrCreateTag(param)); // will be clear if it's not the User function
-                }
+            if (c == '(') {
+                depth++;
+                current += c;
             }
-            if (comma == std::string::npos) break;
-            pos = comma + 1;
+            else if (c == ')') {
+                depth--;
+                current += c;
+            }
+            else if (c == ',' && depth == 0) {
+                result.push_back(current);
+                current.clear();
+            }
+            else {
+                current += c;
+            }
         }
 
-        return Idx;
+        if (!current.empty())
+            result.push_back(current);
+
+        return result;
+    }
+
+    void extractFuncParamFromString(const std::string& params) 
+    {
+        std::vector<std::string> args= splitArgs(params);
+
+        for (int i=0;i<args.size();i++)
+        {
+            switch (i)
+            {
+            case 0: funcPeriodeTag = GetOrCreateTag(args[i]); break;
+            case 1: funcShiftTag = GetOrCreateTag(args[i]);  break;
+            case 2: funcMagnitudeTag = GetOrCreateTag(args[i]);  break;
+            case 3: funcFloorTag = GetOrCreateTag(args[i]); break;
+            default: UserfuncValueTags.push_back(GetOrCreateTag(args[i])); // will be clear if it's not the User function
+            }
+        }
     }
     static std::vector<std::string> splitString(const std::string& input) 
     {

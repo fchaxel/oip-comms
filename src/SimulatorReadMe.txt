@@ -44,14 +44,15 @@ But a strange behaviour can occur depending how OIP calls sequencing is done to 
     var=user(periode in seconds,temporal shift in seconds, amplitude, drift, val1, val2, ..... valx)
 	    output is val1 then val2 up to valx during the periode at fixed change rate of periode/x
 
-    With simulation signals, parameters can be a tag :
-	    var=sin(8,0,amplitude) ; amplitude=square(4)
+    With simulation signals, parameters can be a tag or a function :
+	    var=sin(8,0,amplitude);amplitude=square(4) or var=sin(8,0,square(4))
 	       ... with a partial sinus output when the square wave is not at 0.
-	    var=user(4,0,1,0,var1,var2, 12, var4); var1=sin(0.1); var2=random(0.2); var4=4*var1
+	    var=user(4,0,1,0,var1,var2, 12, var4); var1=sin(0.1); var2=random(2); var4=4*var1
 	       ...sinus, then random, then a const 12 an finally the same sinus with a multiplier
-    or they can be a signal (but today without no more than it's first parameter)
-	    var=user(4,0,1,0,sin(0.1),random(0.2), 12, var4);  var4=4*sin(0.1)
-    ... don't try to make any direct operation with parameters such as 4*sin(0.1) instead of var4.	
+	    can be user(4,0,1,0,sin(0.1),random(2), 12, var4); var4=4*sin(0.1)
+	    but NEVER use any logic or arithmetic operator with parameters
+	    so previous call can be user(4,0,1,0,sin(0.1),random(2), 12, sin(0.1,0,4))
+	    but CANNOT be user(4,0,1,0,sin(0.1),random(2), 12, 4*sin(0.1))
 
 5 digital signals are available
            __________            _________            _________
@@ -84,10 +85,13 @@ Finaly : prev(var) function getting the previous value rather than launching a c
 
 Counting for instance 3 rising edges can be done with
 	    output=GE(inCount,5);inCount=count(input,reset) // 5 = 3 rising edges + 2 falling edges
+	    or output=GE(count(input,reset),5)
 Retentive timerOn can be build with
 	    output=ton(inRTO,delay); inRTO=rs(input_set,input_reset)
+	    or output=ton(rs(input_set,input_reset),delay)
 Building an auto-reset counter
-	    V=count(input,_reset); _reset=GE(prev(V),5);
+	    V=count(input,_reset); _reset=GE(prev(V),7);
+	    or V=count(input,__reset=GE(prev(V),7))
    
    
 A very basic text base protocol on udp port 55555 with the last (unique expected) client is integrated.
