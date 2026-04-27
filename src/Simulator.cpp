@@ -366,6 +366,8 @@ private:
         // all in lowercase
         std::transform(MathOperation.begin(), MathOperation.end(), MathOperation.begin(),
             [](unsigned char c) { return std::tolower(c); });
+        // remove all space
+        MathOperation.erase(std::remove(MathOperation.begin(), MathOperation.end(), ' '), MathOperation.end());
 
         // Get [] with var1 or var1,operator,var2 or var1,operator,var2,var3
         std::vector<std::string> components = parseMathOperation(MathOperation);
@@ -781,22 +783,37 @@ private:
         }
         return tokens;
     }
+    static size_t findoperatoratlevel0(const std::string st)
+    {
+        int level = 0;
 
-    static std::vector<std::string> parseMathOperation(const std::string& op) 
+        for (size_t i = 0; i < st.size(); ++i)
+        {
+            if (st[i] == '(') level++;
+            else if (st[i] == ')') level--;
+            else if (level==0)
+                if (st[i] == '+' || st[i] == '-' || st[i] == '*' || st[i] == '/' || st[i] == '%'
+                    || st[i] == '^' || st[i] == '&' || st[i] == '|')
+                    return i;
+            if (level < 0) return std::string::npos;
+        }
+        return std::string::npos;
+    }
+
+    static std::vector<std::string> parseMathOperation(const std::string& operation)
     {
         std::vector<std::string> components;
 
-        // remove space chars if not already done
-        std::string operation = op;
-        operation.erase(std::remove(operation.begin(), operation.end(), ' '), operation.end());
-
         // Find the = symbol 
         size_t assignPos = operation.find('=');
-        if (assignPos == std::string::npos) 
-        {
-            components.push_back(operation);
-            return components; 
-        }
+        if (assignPos == std::string::npos)
+            if (findoperatoratlevel0(operation) == std::string::npos) // it's a simple var usage "var1" or a function call
+            {
+                components.push_back(operation);
+                return components;
+            }
+            else
+                return parseMathOperation("@@=" + operation); // it's something like var1*var2 change it to add an anonymous variable
 
         // get affected variable (before = symbol)
         std::string leftVar = operation.substr(0, assignPos);
@@ -810,16 +827,7 @@ private:
         std::string rightPart = operation.substr(assignPos + 1);
 
         // find the operator position
-        size_t opPos = std::string::npos;
-        for (size_t i = 0; i < rightPart.size(); ++i) 
-        {
-            if (rightPart[i] == '+' || rightPart[i] == '-' || rightPart[i] == '*' || rightPart[i] == '/' || rightPart[i] == '%'
-                || rightPart[i] == '^' || rightPart[i] == '&' || rightPart[i] == '|')
-            {
-                opPos = i;
-                break;
-            }
-        }
+        size_t opPos = findoperatoratlevel0(rightPart);
 
         if (opPos == std::string::npos) 
         {
